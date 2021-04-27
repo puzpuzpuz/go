@@ -81,6 +81,27 @@ func TestMutex(t *testing.T) {
 	}
 }
 
+func SpinMutex(m *Mutex, cdone chan bool) {
+	for {
+		if m.TryLock() {
+			m.Unlock()
+			cdone <- true
+			return
+		}
+	}
+}
+
+func TestMutexSpin(t *testing.T) {
+	m := new(Mutex)
+	c := make(chan bool)
+	for i := 0; i < 100; i++ {
+		go SpinMutex(m, c)
+	}
+	for i := 0; i < 100; i++ {
+		<-c
+	}
+}
+
 var misuseTests = []struct {
 	name string
 	f    func()
@@ -97,6 +118,15 @@ var misuseTests = []struct {
 		func() {
 			var mu Mutex
 			mu.Lock()
+			mu.Unlock()
+			mu.Unlock()
+		},
+	},
+	{
+		"Mutex.Unlock3",
+		func() {
+			var mu Mutex
+			mu.TryLock()
 			mu.Unlock()
 			mu.Unlock()
 		},
@@ -207,6 +237,31 @@ func TestMutexFairness(t *testing.T) {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		t.Fatalf("can't acquire Mutex in 10 seconds")
+	}
+}
+
+func TestMutexTryLock(t *testing.T) {
+	var mu Mutex
+	if !mu.TryLock() {
+		t.Fatalf("initial TryLock failed unexpectedly")
+	}
+	if mu.TryLock() {
+		t.Fatalf("TryLock on locked Mutex succeeded unexpectedly")
+	}
+	mu.Unlock()
+	if !mu.TryLock() {
+		t.Fatalf("TryLock on unlocked Mutex failed unexpectedly")
+	}
+	done := make(chan bool, 1)
+	go func() {
+		mu.Lock()
+		done <- true
+	}()
+	select {
+	case <-done:
+		t.Fatalf("Lock on Mutex locked with TryLock succeeded unexpectedly")
+	case <-time.After(100 * time.Microsecond):
+		mu.Unlock()
 	}
 }
 

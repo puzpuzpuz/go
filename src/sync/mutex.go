@@ -66,6 +66,18 @@ const (
 	starvationThresholdNs = 1e6
 )
 
+// TryLock either locks m immediately if it is not in use, returning
+// true, or, when a lock on m is already held, immediately returns false.
+func (m *Mutex) TryLock() bool {
+	if atomic.CompareAndSwapInt32(&m.state, 0, mutexLocked) {
+		if race.Enabled {
+			race.Acquire(unsafe.Pointer(m))
+		}
+		return true
+	}
+	return false
+}
+
 // Lock locks m.
 // If the lock is already in use, the calling goroutine
 // blocks until the mutex is available.
